@@ -79,8 +79,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     //mantém lista da tela atualizada
-                                    onTentarNovamente =
-                                        viewModel::observarCartoes
+                                    onTentarNovamente = viewModel::observarCartoes,
+                                    onRemover = viewModel::removerCartao,
                                 )
                             }
 
