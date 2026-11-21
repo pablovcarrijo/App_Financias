@@ -68,19 +68,29 @@ class MainActivity : ComponentActivity() {
                             MeusCartoes -> NavEntry(rota) {
                                 TelaMeusCartoes(
                                     estado = estado,
-
+                                    onTentarNovamente = viewModel::observarCartoes,
+                                    onRemover = viewModel::removerCartao,
                                     onCadastrar = {
-                                        // Evita adicionar a mesma tela duas vezes.
-                                        if (backStack.lastOrNull() == MeusCartoes) {
-                                            //limpa campos
+                                        if (
+                                            estado.podeCadastrar &&
+                                            !estado.salvando &&
+                                            estado.removendoId == null &&
+                                            backStack.lastOrNull() == MeusCartoes
+                                        ) {
                                             viewModel.iniciarCadastro()
-
                                             backStack.add(CadastrarCartao)
                                         }
                                     },
-                                    //mantém lista da tela atualizada
-                                    onTentarNovamente = viewModel::observarCartoes,
-                                    onRemover = viewModel::removerCartao,
+                                    onEditar = { cartao ->
+                                        if (
+                                            !estado.salvando &&
+                                            estado.removendoId == null &&
+                                            backStack.lastOrNull() == MeusCartoes
+                                        ) {
+                                            viewModel.iniciarEdicao(cartao)
+                                            backStack.add(CadastrarCartao)
+                                        }
+                                    }
                                 )
                             }
 

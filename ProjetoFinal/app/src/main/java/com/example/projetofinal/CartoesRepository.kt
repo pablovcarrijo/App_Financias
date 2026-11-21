@@ -13,4 +13,13 @@ class CartoesRepository(private val dao: CartaoDao) {
     suspend fun remover(cartao: Cartao) {
         dao.remover(cartao)
     }
+
+    suspend fun editar(
+        id: Long,
+        nome: String,
+        banco: String,
+        limiteCentavos: Long
+    ): Boolean {
+        return dao.editar(id, nome, banco, limiteCentavos) == 1
+    }
 }

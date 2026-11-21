@@ -46,4 +46,20 @@ abstract class CartaoDao {
 
     @Delete
     abstract suspend fun remover(cartao: Cartao)
+    @Query("""
+    UPDATE cartoes
+    SET nome = :nome,
+        banco = :banco,
+        saldoDisponivelCentavos =
+            saldoDisponivelCentavos + (:limiteCentavos - limiteCentavos),
+        limiteCentavos = :limiteCentavos
+    WHERE id = :id
+      AND :limiteCentavos >= (limiteCentavos - saldoDisponivelCentavos)
+""")
+    abstract suspend fun editar(
+        id: Long,
+        nome: String,
+        banco: String,
+        limiteCentavos: Long
+    ): Int
 }

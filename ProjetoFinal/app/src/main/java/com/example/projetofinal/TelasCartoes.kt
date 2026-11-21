@@ -30,6 +30,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.projetofinal.ui.theme.ProjetoFinalTheme
+import androidx.compose.ui.graphics.Path
+
 
 val Fundo = Color(0xFFF8FAF8)
 val VerdePrincipal = Color(0xFF007254)
@@ -49,6 +51,7 @@ fun TelaMeusCartoes(
     onCadastrar: () -> Unit,
     onTentarNovamente: () -> Unit,
     onRemover: (Cartao) -> Unit,
+    onEditar: (Cartao) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -116,13 +119,14 @@ fun TelaMeusCartoes(
                                 removendo = estado.removendoId == cartao.id,
                                 podeRemover = estado.removendoId == null &&
                                         !estado.salvando,
-                                onRemover = { onRemover(cartao) }
-                            ) // Fecha a chamada de CardCartao.
-                        } // Fecha o bloco de items.
-                    } // Fecha LazyColumn.
-                } // Fecha o else.
-            } // Fecha when.
-        } // Fecha Box.
+                                onRemover = { onRemover(cartao) },
+                                onEditar = { onEditar(cartao) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         estado.erroRemocao?.let { mensagem ->
             Text(
@@ -163,7 +167,8 @@ private fun CardCartao(
     cartao: Cartao,
     removendo: Boolean,
     podeRemover: Boolean,
-    onRemover: () -> Unit
+    onRemover: () -> Unit,
+    onEditar: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -224,13 +229,43 @@ private fun CardCartao(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                IconButton(
-                    onClick = { /* Sem navegação. */ }
+                TextButton(
+                    onClick = {
+                        // Futuramente, abrir a tela de gastos e relatório.
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = Color.White
+                    ),
+                    contentPadding = PaddingValues(
+                        horizontal = 8.dp,
+                        vertical = 4.dp
+                    )
                 ) {
+                    Text(
+                        text = "Gastos e Relatório",
+                        fontSize = 12.sp
+                    )
+
+                    Spacer(Modifier.width(4.dp))
+
                     IconeSeta(
                         voltar = false,
                         cor = Color.White,
-                        descricao = "Opções do cartão ${cartao.nome}"
+                        descricao = "Abrir gastos e relatório"
+                    )
+                }
+
+                IconButton(
+                    onClick = onEditar,
+                    enabled = podeRemover,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Editar cartão ${cartao.nome}"
+                    }
+                ) {
+                    IconeLapis(
+                        cor = Color.White.copy(
+                            alpha = if (podeRemover) 1f else 0.5f
+                        )
                     )
                 }
 
@@ -278,6 +313,16 @@ fun TelaCadastrarCartao(
     //  como barra de status
     //imepadding -> espaço se ajuste caso seja necessário teclado virtual
     val foco = LocalFocusManager.current
+
+    val editando = estado.cartaoEmEdicaoId != null
+
+    val podeSalvar = !estado.carregando &&
+            estado.erroLista == null &&
+            (editando || estado.podeCadastrar) &&
+            !estado.salvando &&
+            !estado.cadastroConcluido &&
+            estado.removendoId == null
+
     Column(
         modifier.fillMaxSize()
         .safeDrawingPadding()
@@ -293,8 +338,13 @@ fun TelaCadastrarCartao(
             IconButton(onClick = onVoltar, enabled = !estado.salvando) {
                 IconeSeta(voltar = true, cor = TextoPrincipal, descricao = "Voltar")
             }
-            Text("Cadastrar cartão", fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                color = TextoPrincipal, modifier = Modifier.weight(1f))
+            Text(
+                text = if (editando) "Editar cartão" else "Cadastrar cartão",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextoPrincipal,
+                modifier = Modifier.weight(1f)
+            )
         }
         Column(
             Modifier.weight(1f)
@@ -339,18 +389,29 @@ fun TelaCadastrarCartao(
             Spacer(Modifier.height(8.dp))
         }
         BotaoPrincipal(
-            onClick = { foco.clearFocus(); onCadastrar() },
-            enabled = estado.podeCadastrar && !estado.salvando && !estado.cadastroConcluido,
+            onClick = {
+                foco.clearFocus()
+                onCadastrar()
+            },
+            enabled = podeSalvar,
             modifier = Modifier.padding(top = 16.dp, bottom = 20.dp)
         ) {
             if (estado.salvando) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp,
-                    color = TextoPrincipal)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White
+                )
+
                 Spacer(Modifier.width(8.dp))
             }
+
             Text(
-                if (estado.salvando) "Cadastrando..."
-                else "Cadastrar cartão",
+                text = when {
+                    estado.salvando -> "Salvando..."
+                    editando -> "Salvar alterações"
+                    else -> "Cadastrar cartão"
+                },
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -396,7 +457,11 @@ private fun CampoCadastro(
             focusedTextColor = TextoPrincipal,
             unfocusedTextColor = TextoPrincipal,
             focusedContainerColor = Fundo,
-            unfocusedContainerColor = Fundo
+            unfocusedContainerColor = Fundo,
+            focusedPlaceholderColor = TextoSecundario,
+            unfocusedPlaceholderColor = TextoSecundario,
+            focusedPrefixColor = TextoPrincipal,
+            unfocusedPrefixColor = TextoPrincipal,
         )
     )
 }
@@ -533,5 +598,39 @@ private fun IconeLixeira(
         // Linhas internas.
         linha(10f, 10f, 10f, 17f)
         linha(14f, 10f, 14f, 17f)
+    }
+}
+
+@Composable
+private fun IconeLapis(
+    cor: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(24.dp)) {
+        val escalaX = size.width / 24f
+        val escalaY = size.height / 24f
+
+        val contorno = Path().apply {
+            moveTo(3f * escalaX, 21f * escalaY)
+            lineTo(4f * escalaX, 16f * escalaY)
+            lineTo(16f * escalaX, 4f * escalaY)
+            lineTo(20f * escalaX, 8f * escalaY)
+            lineTo(8f * escalaX, 20f * escalaY)
+            close()
+        }
+
+        drawPath(
+            path = contorno,
+            color = cor,
+            style = Stroke(width = 1.8.dp.toPx())
+        )
+
+        drawLine(
+            color = cor,
+            start = Offset(13f * escalaX, 7f * escalaY),
+            end = Offset(17f * escalaX, 11f * escalaY),
+            strokeWidth = 1.8.dp.toPx(),
+            cap = StrokeCap.Round
+        )
     }
 }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
 
 data class CartoesUiState(
     val cartoes: List<Cartao> = emptyList(),
@@ -24,7 +25,8 @@ data class CartoesUiState(
     val salvando: Boolean = false,
     val cadastroConcluido: Boolean = false,
     val removendoId: Long? = null,
-    val erroRemocao: String? = null
+    val erroRemocao: String? = null,
+    val cartaoEmEdicaoId: Long? = null
 ) {
     val podeCadastrar: Boolean
         get() = !carregando && erroLista == null && cartoes.size < MAXIMO_CARTOES
@@ -61,10 +63,23 @@ class CartoesViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun iniciarCadastro() {
-        if (_uiState.value.salvando) return
-        _uiState.update { it.copy(nome = "", banco = "", limite = "",
-            erroNome = null, erroBanco = null, erroLimite = null,
-            erroCadastro = null, cadastroConcluido = false) }
+        val estado = _uiState.value
+
+        if (estado.salvando || estado.removendoId != null) return
+
+        _uiState.update {
+            it.copy(
+                cartaoEmEdicaoId = null,
+                nome = "",
+                banco = "",
+                limite = "",
+                erroNome = null,
+                erroBanco = null,
+                erroLimite = null,
+                erroCadastro = null,
+                cadastroConcluido = false
+            )
+        }
     }
 
     /*
@@ -102,37 +117,112 @@ class CartoesViewModel(application: Application) : AndroidViewModel(application)
 
     fun cadastrar() {
         val estado = _uiState.value
-        if (estado.salvando || estado.cadastroConcluido) return
-        if (!estado.podeCadastrar) {
-            _uiState.update { it.copy(erroCadastro =
-                if (it.cartoes.size >= MAXIMO_CARTOES) "Você já possui 5 cartões."
-                else "Aguarde o carregamento dos cartões.") }
+
+        if (
+            estado.salvando ||
+            estado.cadastroConcluido ||
+            estado.removendoId != null
+        ) return
+
+        val idEdicao = estado.cartaoEmEdicaoId
+
+        if (estado.carregando || estado.erroLista != null) {
+            _uiState.update {
+                it.copy(
+                    erroCadastro = "Aguarde o carregamento dos cartões ou tente novamente."
+                )
+            }
+            return
+        }
+
+        // O limite de 5 vale para novos cadastros.
+        if (idEdicao == null && !estado.podeCadastrar) {
+            _uiState.update {
+                it.copy(erroCadastro = "Você já possui 5 cartões.")
+            }
             return
         }
 
         val centavos = converterParaCentavos(estado.limite)
-        val erroNome = if (estado.nome.isBlank()) "Informe o nome do cartão." else null
-        val erroBanco = if (estado.banco.isBlank()) "Informe o banco." else null
-        val erroLimite = if (centavos == null)
-            "Informe um valor numérico e que seja positivo, como 3.000,00." else null
-        _uiState.update { it.copy(erroNome = erroNome, erroBanco = erroBanco,
-            erroLimite = erroLimite, erroCadastro = null) }
-        if (erroNome != null || erroBanco != null || centavos == null) return
 
-        // Atualizado antes de iniciar a corrotina, impedindo toques duplicados.
+        val erroNome = if (estado.nome.isBlank()) {
+            "Informe o nome do cartão."
+        } else {
+            null
+        }
+
+        val erroBanco = if (estado.banco.isBlank()) {
+            "Informe o banco."
+        } else {
+            null
+        }
+
+        val erroLimite = if (centavos == null) {
+            "Informe um valor positivo, como 3.000,00."
+        } else {
+            null
+        }
+
+        _uiState.update {
+            it.copy(
+                erroNome = erroNome,
+                erroBanco = erroBanco,
+                erroLimite = erroLimite,
+                erroCadastro = null
+            )
+        }
+
+        if (
+            erroNome != null ||
+            erroBanco != null ||
+            centavos == null
+        ) return
+
         _uiState.update { it.copy(salvando = true) }
+
         viewModelScope.launch {
             try {
-                val inserido = repository.cadastrar(
-                    estado.nome.trim(), estado.banco.trim(), centavos
-                )
-                _uiState.update { it.copy(salvando = false, cadastroConcluido = inserido,
-                    erroCadastro = if (inserido) null else "Você já possui 5 cartões.") }
+                val sucesso = if (idEdicao == null) {
+                    repository.cadastrar(
+                        nome = estado.nome.trim(),
+                        banco = estado.banco.trim(),
+                        limiteCentavos = centavos
+                    )
+                } else {
+                    repository.editar(
+                        id = idEdicao,
+                        nome = estado.nome.trim(),
+                        banco = estado.banco.trim(),
+                        limiteCentavos = centavos
+                    )
+                }
+
+                val mensagemErro = when {
+                    sucesso -> null
+                    idEdicao == null -> "Você já possui 5 cartões."
+                    else -> {
+                        "Não foi possível editar. O cartão pode ter sido removido " +
+                                "ou o novo limite é menor que o valor já utilizado."
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        salvando = false,
+                        cadastroConcluido = sucesso,
+                        erroCadastro = mensagemErro
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                _uiState.update { it.copy(salvando = false,
-                    erroCadastro = "Não foi possível salvar. Tente novamente.") }
+                _uiState.update {
+                    it.copy(
+                        erroCadastro = "Não foi possível salvar. Tente novamente."
+                    )
+                }
+            } finally {
+                _uiState.update { it.copy(salvando = false) }
             }
         }
     }
@@ -170,6 +260,32 @@ class CartoesViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(removendoId = null)
                 }
             }
+        }
+    }
+
+    fun iniciarEdicao(cartao: Cartao) {
+        val estado = _uiState.value
+
+        if (estado.salvando || estado.removendoId != null) return
+
+        // Exemplo: 150050 centavos vira "1500,50".
+        val limiteFormatado = BigDecimal
+            .valueOf(cartao.limiteCentavos, 2)
+            .toPlainString()
+            .replace('.', ',')
+
+        _uiState.update {
+            it.copy(
+                cartaoEmEdicaoId = cartao.id,
+                nome = cartao.nome,
+                banco = cartao.banco,
+                limite = limiteFormatado,
+                erroNome = null,
+                erroBanco = null,
+                erroLimite = null,
+                erroCadastro = null,
+                cadastroConcluido = false
+            )
         }
     }
 }
